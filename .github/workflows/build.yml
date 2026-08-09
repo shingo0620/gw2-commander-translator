@@ -1,0 +1,37 @@
+name: Build capture spike
+
+on:
+  push:
+    branches: [main, "agent/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore packages
+        run: nuget restore CommanderTranslator.csproj
+
+      - name: Build module package
+        run: msbuild CommanderTranslator.csproj /m /p:Configuration=Release /p:Platform="Any CPU"
+
+      - name: Upload .bhm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CommanderTranslator-capture-spike
+          path: bin/Release/CommanderTranslator.bhm
+          if-no-files-found: error
