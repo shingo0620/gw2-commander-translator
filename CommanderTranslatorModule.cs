@@ -120,7 +120,7 @@ namespace Gw2CommanderTranslator {
                 BackgroundColor = new Color(0, 0, 0, 190),
                 ControlPadding = new Vector2(6, 4),
                 FlowDirection = ControlFlowDirection.SingleTopToBottom,
-                WidthSizingMode = SizingMode.Fixed,
+                WidthSizingMode = SizingMode.Standard,
                 HeightSizingMode = SizingMode.AutoSize,
                 Width = 620,
                 Location = new Point(40, 260),
@@ -175,7 +175,7 @@ namespace Gw2CommanderTranslator {
             var lastTicks = Interlocked.Read(ref _lastMessageReceivedTicks);
             var lastAge = lastTicks < 0
                 ? "never"
-                : FormatAge(TimeSpan.FromTicks(Math.Max(0, _uptime.ElapsedTicks - lastTicks)));
+                : FormatAge(TimeSpan.FromTicks(Math.Max(0, _uptime.Elapsed.Ticks - lastTicks)));
 
             _counterLabel.Text = $"Captured: {count} | Last message: {lastAge} ago";
             _lastMessageLabel.Text = $"Last: {_lastMessageSummary}";
