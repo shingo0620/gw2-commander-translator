@@ -53,7 +53,7 @@ nuget restore CommanderTranslator.csproj
 msbuild CommanderTranslator.csproj /p:Configuration=Release
 ```
 
-輸出位置：`bin\Release\CommanderTranslator.bhm`。
+輸出位置通常是 `bin\Release\net48\CommanderTranslator.bhm`；CI artifact 會自動收集任何平台輸出目錄下的 `.bhm`。
 
 若要以 Blish HUD 偵錯，請使用：
 
