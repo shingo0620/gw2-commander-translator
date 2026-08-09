@@ -1,0 +1,20 @@
+{
+  "name": "Commander Translator Capture Spike",
+  "version": "0.1.0",
+  "namespace": "shingo0620.gw2.commandertranslator",
+  "package": "CommanderTranslator.dll",
+  "manifest_version": 1,
+  "description": "Validates live Squad Chat capture through the Blish HUD ArcDPS bridge. This diagnostic build does not translate or automate gameplay.",
+  "dependencies": {
+    "bh.blishhud": ">=1.3.0"
+  },
+  "url": "https://github.com/shingo0620/gw2-commander-translator",
+  "contributors": [
+    {
+      "name": "Shingo Wu",
+      "url": "https://github.com/shingo0620"
+    }
+  ],
+  "directories": [],
+  "enabled_without_gw2": false
+}
