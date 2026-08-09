@@ -33,5 +33,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CommanderTranslator-capture-spike
-          path: bin/Release/CommanderTranslator.bhm
+          path: bin/**/CommanderTranslator.bhm
           if-no-files-found: error
