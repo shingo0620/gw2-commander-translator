@@ -8,7 +8,8 @@
 
 - 顯示 ArcDPS bridge 是否已連線，以及 `SquadMessage` 是否可用。
 - 收到 Squad-family message 時，顯示計數、最後訊息的經過時間與最新一行訊息。
-- 在設定中提供「Record raw Squad Chat to the Blish HUD log」開關，預設關閉；開啟後才會把原文、角色／帳號與 payload metadata 寫到本機 Blish HUD log。
+- 在設定中提供「Record raw Squad Chat to an independent log file」開關，預設關閉；開啟後才會把原文、角色／帳號與 payload metadata 寫到 module 專用的每日 log。
+- 獨立 log 會寫入 Blish HUD 使用者資料目錄下的 `Logs/CommanderTranslator-YYYY-MM-DD.log`，可在測試後直接提供給開發者判讀。
 - 保留 subgroup 與 broadcast metadata，協助驗證 Triple Trouble 實戰中的訊息範圍。
 
 ## 不會做什麼
@@ -16,7 +17,7 @@
 - 不翻譯、不做 tactical intent engine、不顯示正式 HUD。
 - 不需要 Nexus；不接收 Map Chat。
 - 不需要先辨識發話者是否為 Commander。
-- 不存檔 raw chat，除非使用者自行啟用 Blish HUD diagnostic log。
+- 不存檔 raw chat，除非使用者自行啟用 module 的獨立 diagnostic log。
 
 ## 安裝前置條件
 
