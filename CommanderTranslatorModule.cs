@@ -3,6 +3,8 @@ using System.Collections.Concurrent;
 using System.ComponentModel.Composition;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Blish_HUD;
@@ -20,11 +22,13 @@ namespace Gw2CommanderTranslator {
     /// </summary>
     [Export(typeof(Module))]
     public sealed class CommanderTranslatorModule : Module {
+        private const string DiagnosticLogDirectoryName = "Logs";
         private const int MaximumDisplayLength = 220;
 
         private static readonly Logger Logger = Logger.GetLogger<CommanderTranslatorModule>();
 
         private readonly ConcurrentQueue<CapturedSquadMessage> _pendingMessages = new ConcurrentQueue<CapturedSquadMessage>();
+        private readonly ConcurrentQueue<string> _pendingDiagnosticLogLines = new ConcurrentQueue<string>();
         private readonly Stopwatch _uptime = Stopwatch.StartNew();
 
         private ArcDpsMessageListener<SquadMessageInfo> _squadMessageListener;
@@ -33,6 +37,9 @@ namespace Gw2CommanderTranslator {
         private Label _counterLabel;
         private Label _lastMessageLabel;
         private SettingEntry<bool> _rawMessageLogging;
+        private StreamWriter _diagnosticLogWriter;
+        private string _diagnosticLogPath;
+        private bool _diagnosticLogUnavailable;
         private volatile bool _acceptMessages;
         private long _receivedCount;
         private long _lastMessageReceivedTicks = -1;
@@ -46,8 +53,8 @@ namespace Gw2CommanderTranslator {
             _rawMessageLogging = settings.DefineSetting(
                 "raw squad chat diagnostic log",
                 false,
-                () => "Record raw Squad Chat to the Blish HUD log",
-                () => "Off by default. Enable only while testing; chat text, account names, and character names are written to the local Blish HUD log.");
+                () => "Record raw Squad Chat to an independent log file",
+                () => "Off by default. Enable only while testing; chat text, account names, and character names are written to a daily log file owned by this module.");
         }
 
         protected override Task LoadAsync() {
@@ -67,6 +74,7 @@ namespace Gw2CommanderTranslator {
         }
 
         protected override void Update(GameTime gameTime) {
+            SynchronizeDiagnosticLog();
             DrainCapturedMessages();
             RefreshDiagnosticPanel();
         }
@@ -76,6 +84,7 @@ namespace Gw2CommanderTranslator {
             // gate ensures a module that is unloaded never processes or logs chat again.
             _acceptMessages = false;
             _squadMessageListener?.Dispose();
+            CloseDiagnosticLog(_rawMessageLogging?.Value == true);
             _diagnosticPanel?.Dispose();
         }
 
@@ -98,21 +107,105 @@ namespace Gw2CommanderTranslator {
             Interlocked.Increment(ref _receivedCount);
             Interlocked.Exchange(ref _lastMessageReceivedTicks, capture.ReceivedTicks);
 
-            if (_rawMessageLogging?.Value == true) {
-                Logger.Info(
-                    "[CommanderTranslator Capture] localMs={localMs} serverTimestamp={serverTimestamp:o} channelId={channelId} channelType={channelType} subgroup={subgroup} broadcast={broadcast} account={account} character={character} text={text}",
-                    capture.LocalMilliseconds.ToString("F3", CultureInfo.InvariantCulture),
-                    message.TimeStamp,
-                    message.ChannelId,
-                    message.ChannelType,
-                    message.Subgroup,
-                    message.IsBroadcast,
-                    SanitizeForSingleLine(message.AccountName),
-                    SanitizeForSingleLine(message.CharacterName),
-                    SanitizeForSingleLine(message.Text));
+            if (_rawMessageLogging?.Value == true && !_diagnosticLogUnavailable) {
+                _pendingDiagnosticLogLines.Enqueue(FormatDiagnosticLogLine(capture, message));
             }
 
             return Task.CompletedTask;
+        }
+
+        private void SynchronizeDiagnosticLog() {
+            if (_rawMessageLogging?.Value != true) {
+                CloseDiagnosticLog(false);
+                _diagnosticLogUnavailable = false;
+                DiscardPendingDiagnosticLogLines();
+                return;
+            }
+
+            if (_diagnosticLogUnavailable) {
+                return;
+            }
+
+            try {
+                var logDirectory = ModuleParameters.DirectoriesManager.GetFullDirectoryPath(DiagnosticLogDirectoryName);
+                var expectedPath = Path.Combine(logDirectory, $"CommanderTranslator-{DateTime.Now:yyyy-MM-dd}.log");
+
+                if (_diagnosticLogWriter == null || !string.Equals(_diagnosticLogPath, expectedPath, StringComparison.OrdinalIgnoreCase)) {
+                    CloseDiagnosticLog(true);
+                    OpenDiagnosticLog(expectedPath);
+                }
+
+                WritePendingDiagnosticLogLines();
+            } catch (Exception exception) {
+                _diagnosticLogUnavailable = true;
+                DiscardPendingDiagnosticLogLines();
+                Logger.Warn("Unable to open the independent Commander Translator log file: {exception}", exception.ToString());
+            }
+        }
+
+        private void OpenDiagnosticLog(string path) {
+            if (string.IsNullOrWhiteSpace(path)) {
+                throw new InvalidOperationException("The module Logs directory was not registered by Blish HUD.");
+            }
+
+            var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
+            _diagnosticLogWriter = new StreamWriter(stream, new UTF8Encoding(false));
+            _diagnosticLogPath = path;
+
+            _diagnosticLogWriter.WriteLine();
+            _diagnosticLogWriter.WriteLine($"# Commander Translator capture session started {DateTimeOffset.Now:O}");
+            _diagnosticLogWriter.Flush();
+            Logger.Info("Independent Commander Translator capture log enabled: {path}", path);
+        }
+
+        private void WritePendingDiagnosticLogLines() {
+            if (_diagnosticLogWriter == null) {
+                return;
+            }
+
+            while (_pendingDiagnosticLogLines.TryDequeue(out var line)) {
+                _diagnosticLogWriter.WriteLine(line);
+            }
+
+            _diagnosticLogWriter.Flush();
+        }
+
+        private void CloseDiagnosticLog(bool flushPendingLines) {
+            if (flushPendingLines) {
+                WritePendingDiagnosticLogLines();
+            } else {
+                DiscardPendingDiagnosticLogLines();
+            }
+
+            if (_diagnosticLogWriter == null) {
+                _diagnosticLogPath = null;
+                return;
+            }
+
+            _diagnosticLogWriter.Dispose();
+            _diagnosticLogWriter = null;
+            _diagnosticLogPath = null;
+        }
+
+        private void DiscardPendingDiagnosticLogLines() {
+            while (_pendingDiagnosticLogLines.TryDequeue(out _)) {
+            }
+        }
+
+        private static string FormatDiagnosticLogLine(CapturedSquadMessage capture, SquadMessageInfo message) {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "[{0:O}] [CommanderTranslator Capture] localMs={1:F3} serverTimestamp={2:o} channelId={3} channelType={4} subgroup={5} broadcast={6} account={7} character={8} text={9}",
+                DateTimeOffset.Now,
+                capture.LocalMilliseconds,
+                message.TimeStamp,
+                message.ChannelId,
+                message.ChannelType,
+                message.Subgroup,
+                message.IsBroadcast,
+                SanitizeForSingleLine(message.AccountName),
+                SanitizeForSingleLine(message.CharacterName),
+                SanitizeForSingleLine(message.Text));
         }
 
         private void CreateDiagnosticPanel() {
